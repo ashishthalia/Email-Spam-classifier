@@ -1,0 +1,1216 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app: kube-prometheus-stack
+    app.kubernetes.io/instance: prometheus-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: kube-prometheus-stack
+    app.kubernetes.io/version: 30.1.0
+    chart: kube-prometheus-stack-30.1.0
+    helm.toolkit.fluxcd.io/name: kube-prometheus-stack
+    helm.toolkit.fluxcd.io/namespace: monitoring
+    heritage: Helm
+    release: prometheus-stack
+  name: custom-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: "Containers Alerts"
+      rules:
+        - alert: ContainerStopped
+          expr: avg(docker_container_running_state) by (job,instance_name,instance,name) == 0
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: container
+          annotations:
+            summary: "Docker Container {{ $labels.name }} is Down."
+            graph_link: "https://watch.myfareye.in/d/docker-exporter/docker-exporter?orgId=1&viewPanel=12"
+            description: "Docker Container {{ $labels.name }} is Down on {{ $labels.instance }} Instance for more than 5 minutes."
+        - alert: ContainerHighCPUutilization
+          expr: avg(increase(docker_container_cpu_used_total{instance =~ ".+", name =~ ".+"}[5m]) / increase(docker_container_cpu_capacity_total[5m])) by (job,instance_name,instance,name) > 70
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: container
+          annotations:
+            summary: "CPU Utilization by Docker Container {{ $labels.name }} is using high."
+            graph_link: "https://watch.myfareye.in/d/docker-exporter/docker-exporter?orgId=1&viewPanel=12"
+            description: "CPU Utilization of Docker Container {{ $labels.name }} on {{ $labels.instance }} Instance for more than 5 minutes."
+      #- alert: ContainerHighMemoryUtilization
+      #  expr: avg(docker_container_memory_used_bytes / 1024/1024 /1024) by (job,instance_name,instance,name) > 2
+      #  for: 5m
+      #  labels:
+      #    severity: medium
+      #    env: aws-oregon-prod-k8s
+      #    service: container
+      #  annotations:
+      #    summary: "Memory Utilization by Docker Container {{ $labels.name }} is using high."
+      #    description: "Memory Utilization by Docker Container {{ $labels.name }} on {{ $labels.instance }} Instance is {{ $value }}GIB for more than 5 minutes."
+
+    - name: Debezium Alerts
+      rules:
+      - alert: Debezium-ReplicationSlotDown
+        expr: avg(pg_replication_slots_active{server!~"dominos.+|fareye-prod.+"}) by (server, slot_name) == 0
+        for: 5m
+        labels:
+          severity: medium
+          env: fareye-infra
+          service: debezium
+          team: devops
+        annotations:
+          graph_link: "https://grafana.us.fareye.io/d/debeziumlag/debeziumlag?orgId=1&refresh=5s"
+          runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1295614058/How+to+Resolve+Debezium+Lag+Aerts."
+          description: "Debezium-Replication Slot of {{ $labels.enviroment }} has been Down for more than 5 minutes."
+      - alert: DebeziumLagConfirmflush_lsn-warrom
+        expr: avg(pg_replication_slots_confirmed_flush_lsn_bytes{server=~"warroom.+", slot_name=~".+"}) by (slot_name,server) / 1024/1024/1024 >= 10
+        for: 10m
+        labels:
+          severity: medium
+          env: fareye-infra    
+          service: debezium
+          team: devops 
+        annotations:
+          graph_link: "https://grafana.us.fareye.io/d/debeziumlag/debeziumlag?orgId=1&refresh=5s"
+          runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1295614058/How+to+Resolve+Debezium+Lag+Aerts."
+          description: "DebeziumLag confirm_flush_lsn of {{ $labels.enviroment }} has been increasing for more than 10 minutes. Current value is {{ $value }}GiB"
+
+      - alert: DebeziumLagConfirmflush_lsn-Roster-Prod 
+        expr: avg(pg_replication_slots_confirmed_flush_lsn_bytes{server=~"micro-service.+", slot_name=~"connect_prod_roster"}) by (slot_name,server) / 1024/1024/1024 >= 20
+        for: 10m
+        labels:
+          severity: medium
+          env: fareye-infra 
+          service: debezium
+          team: devops 
+        annotations:
+          graph_link: "https://grafana.us.fareye.io/d/debeziumlag/debeziumlag?orgId=1&refresh=5s"
+          runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1295614058/How+to+Resolve+Debezium+Lag+Aerts."
+          description: "DebeziumLag confirm_flush_lsn of {{ $labels.enviroment }} has been increasing for more than 10 minutes. Current value is {{ $value }}GiB"
+      - alert: DebeziumLagConfirmflush_lsn
+        expr: avg(pg_replication_slots_confirmed_flush_lsn_bytes{server!~"fareye-prod.ccpbt3eux8z1.us-west-2.rds.amazonaws.com:5432|warroom.ccpbt3eux8z1.us-west-2.rds.amazonaws.com:5432|dominos.+", slot_name!~"connect_prod_roster"}) by (slot_name,server) / 1024/1024/1024 >= 1
+        for: 10m
+        labels:
+          severity: medium
+          env: fareye-infra 
+          service: debezium
+          team: devops 
+        annotations:
+          graph_link: "https://grafana.us.fareye.io/d/debeziumlag/debeziumlag?orgId=1&refresh=5s"
+          runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1295614058/How+to+Resolve+Debezium+Lag+Aerts."
+          description: "DebeziumLag confirm_flush_lsn of {{ $labels.enviroment }} has been increasing for more than 10 minutes. Current value is {{ $value }}GiB"
+      - alert: Debezium_lag-Restart_lsn
+        expr: avg(pg_replication_slots_restart_lsn_bytes{server!~"fareye-prod.ccpbt3eux8z1.us-west-2.rds.amazonaws.com:5432"}/1024/1024/1024) by (slot_name,slot_type,server) >= 20
+        for: 5m
+        labels:
+          severity: medium
+          env: fareye-infra
+          service: debezium
+        annotations:
+          summary: "Debezium_lag(restart_lsn) of {{ $labels.enviroment }} is High."
+          description: "Debezium_lag(restart_lsn) of {{ $labels.enviroment }} is {{ $value }}GiB for more than 2 minutes."
+          graph_link: "https://grafana.us.fareye.io/d/debeziumlag/debeziumlag?orgId=1&refresh=5s"
+          runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1295614058/How+to+Resolve+Debezium+Lag+Aerts."
+      - alert: Debezium-Replication_slot_Down
+        expr: avg(pg_replication_slots_active{server!~"fareye-prod.ccpbt3eux8z1.us-west-2.rds.amazonaws.com:5432|dominos.+"}) by (server,slot_name,slot_type) == 0
+        for: 2m
+        labels:
+          severity: medium
+          env: fareye-infra
+          service: debezium
+        annotations:
+          graph_link: "https://grafana.us.fareye.io/d/debeziumlag/debeziumlag?orgId=1&refresh=5s"
+          runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1295614058/How+to+Resolve+Debezium+Lag+Aerts."
+          summary: "Replication_slot_Down of {{ $labels.enviroment }} is Down."
+          description: "Replication_slot_Down of {{ $labels.enviroment }} is Down for more than 2 minutes."
+
+    - name: Instance Alerts
+      rules:
+        - alert: NoDataAlert-Instances-oregon-prod
+          expr: absent(avg(up{job=~"node.+"} ) by (instance_name,instance,job)) == 1
+          for: 2m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            summary: "Instance {{ $labels.instance_name }} is Down, value: {{$value}}"
+            description: "Instance Metrics is not receiving. Please check it ASAP."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2958131259/No+data+alerts"
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1"
+        - alert: InstanceDown
+          expr: avg(up{instance_name!~"prod-cluster.+|prod-cluster-oregon-prod-cassendra-k8s.+|kafka-debezium-4|kafka-debezium-1|ruler-and-alertmanager|Logstash-Mobi-HA|Domi.+|dominos.+|DHL.+|dms-prod|dhl.+|walmart_server|HZL.+|Staging.*|Prod|Prod1-NewVPC|Prod2-New|prod3-Newvpc-Production|prod4-Newvpc-Production|Prod3|Contract Management Tool|.*-spot",instance_name!~"prod-cluster-prod-eks.+|prod-cluster-oregon-prod.+|2368407359216129.+|workerenv.+|Seqrite Server.+",job=~"node.+",instance_state!="stopped"}) by (instance_name,instance,public_ip,job) == 0
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            summary: "Instance {{ $labels.instance_name }} is Down, value: {{$value}}"
+            description: "Instance  {{ $labels.instance_name }}  has been down for more than 2 minutes."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724855857/InstanceDown+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1"
+        - alert: HighCpuUtilization
+          expr: 100 - (avg by(instance_name,public_ip,instance,instance_name) (rate(node_cpu_seconds_total{mode="idle",job=~"nodes-outside-k8s",instance_name!~"Logstash-Mobi-HA|staging-es-source-spot"}[10m])) * 100) >= 90
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725609492/High+CPU+Utilization+Alert"
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=6"
+            summary: "CPU Utilization on {{ $labels.instance_name }} - {{ $labels.instance }}  is High,Current Utilization is : {{$value}}"
+            description: "CPU usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 5 minutes. Current Utilization is: {{$value}}."
+
+        - alert: HighCpuUtilization
+          expr: 100 - (avg by(instance_name, public_ip, instance, instance_name) (rate(node_cpu_seconds_total{instance_name=~"staging-es-source-spot",job=~"nodes-outside-k8s",mode="idle"}[10m])) * 100) >= 92
+          for: 30m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725609492/High+CPU+Utilization+Alert"
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=6"
+            summary: "CPU Utilization on {{ $labels.instance_name }} - {{ $labels.instance }}  is High,Current Utilization is : {{$value}}"
+            description: "CPU usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 10 minutes. Current Utilization is: {{$value}}."
+
+        - alert: aw-or-pd-vm-fe-workload-Memory
+          expr: 100 * (1 - avg by(instance_name,public_ip,instance,instance)((avg_over_time(node_memory_MemFree_bytes{job=~"nodes-outside-k8s",instance_name!~"staging-es-process-spot"}[10m]) + avg_over_time(node_memory_Cached_bytes{job=~"nodes-outside-k8s"}[10m]) + avg_over_time(node_memory_Buffers_bytes{job=~"nodes-outside-k8s"}[10m])) / avg_over_time(node_memory_MemTotal_bytes{job=~"nodes-outside-k8s"}[10m]))) >= 90
+          for: 5m
+          labels:
+            cloud: aw
+            region: or
+            service: vm
+            env: pd 
+            client: fe
+            identifier: workload
+            classifier: memory
+            alert_sub_category: memory_utilization 
+            severity: high
+            threshold: "90"
+            frequency: 5m
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=11"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2708373541/High+Memory+Utilization+Alert"
+            summary: "RAM Utilization on {{ $labels.instance_name }} - {{ $labels.instance }} is High,Current Utilization is : {{$value}}"
+            description: "RAM usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 5 minutes. Current Utilization is: {{$value}}."
+        - alert: HighCpuUtilization-k8s-nodes
+          expr: 100 - (avg by(instance_name,public_ip,instance,instance_name) (rate(node_cpu_seconds_total{mode="idle",job=~"node-exporter"}[10m])) * 100) >= 90
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=11"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2708373541/High+Memory+Utilization+Alert"
+            summary: "CPU Utilization on {{ $labels.instance_name }} - {{ $labels.instance }}  is High,Current Utilization is : {{$value}}"
+            description: "CPU usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 2 minutes. Current Utilization is: {{$value}}."
+        - alert: HighMemoryUtilization-k8s-nodes
+          expr: 100 * (1 - avg by(instance_name,public_ip,instance,instance)((avg_over_time(node_memory_MemFree_bytes{job=~"node-exporter"}[10m]) + avg_over_time(node_memory_Cached_bytes{job=~"node-exporter"}[10m]) + avg_over_time(node_memory_Buffers_bytes{job=~"node-exporter"}[10m])) / avg_over_time(node_memory_MemTotal_bytes{job=~"node-exporter"}[10m]))) >= 95
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=11"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2708373541/High+Memory+Utilization+Alert"
+            summary: "RAM Utilization on {{ $labels.instance_name }} - {{ $labels.instance }} is High,Current Utilization is : {{$value}}"
+            description: "RAM usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 2 minutes. Current Utilization is: {{$value}}."
+
+        - alert: HighDiskUtilization
+          expr: (1-((node_filesystem_avail_bytes{job=~"node.+",instance_name!="HeapDumpAnalysis",fstype=~"ext4|xfs|tmpfs",mountpoint!~"/ru.+"}/node_filesystem_size_bytes{job=~"node.+",fstype=~"ext4|xfs|tmpfs",mountpoint!~"/ru.+"}*100)/100) ) * 100 >= 90
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=13"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2708013127/High+Disk+Utilization+Alert"
+            summary: "Disk Utilization on {{ $labels.instance_name }} - {{ $labels.instance }} is High,Current Utilization is : {{$value}}"
+            description: "Disk usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 2 minutes. Current Utilization is: {{$value}}."
+        - alert: HighDiskUtilization Heap Dump
+          expr: (1-((node_filesystem_avail_bytes{job=~"node.+",instance_name=~"HeapDumpAnalysis",fstype=~"ext4|xfs|tmpfs",mountpoint!~"/ru.+"}/node_filesystem_size_bytes{job=~"node.+",fstype=~"ext4|xfs|tmpfs",mountpoint!~"/ru.+"}*100)/100) ) * 100 >= 98
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=13"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2708013127/High+Disk+Utilization+Alert"
+            summary: "Disk Utilization on {{ $labels.instance_name }} - {{ $labels.instance }} is High,Current Utilization is : {{$value}}"
+            description: "Disk usage of {{ $labels.instance_name }} - {{ $labels.instance }} has been high for more than 2 minutes. Current Utilization is: {{$value}}."
+        - alert: FileDescriptor-Usage
+          expr: avg(node_filefd_allocated{job=~"node.+"}) by (instance,instance_name) >= 300000
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724102236/FileDescriptorUtilization-ServerWise+Alert"
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=15"
+            summary: "File description usage is high on {{ $labels.instance_name }} - {{ $labels.instance }}. Current Utilization is : {{$value}}"
+            description: "File description usage of {{ $labels.instance_name }} - {{ $labels.instance }} is high for more than 2 minutes. Current Utilization is: {{$value}}."
+        - alert: NumberOfInodeAvailable
+          expr: (node_filesystem_files_free{job=~"node.+",mountpoint!~"/boot/efi|/var/lib/lxcfs|/snap/.+"}/node_filesystem_files{job=~"node.+",mountpoint!~"/boot/efi|/var/lib/lxcfs|/snap/.+"} * 100)  <= 20
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/s3gBxKaGz/instances?orgId=1&viewPanel=19"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2721775994/NumberOfInodeAvailableIsLow+Alert+Runbook"
+            summary: "Free Inode available on {{ $labels.instance_name }} - {{ $labels.instance }} is below 20%. Current Utilization is : {{$value}}"
+            description: "Free Inode available on {{ $labels.instance_name }} - {{ $labels.instance }} is less than 20% for more than 2 minutes. Current Utilization is: {{$value}}."
+        - alert: DiskIO-UtilizationPercentage
+          expr: avg(irate(node_disk_io_time_seconds_total{job=~"node.+"}[5m])*100) by (instance_name,instance,device) > 90
+          for: 15m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: instances
+          annotations:
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2775449949/Disk-IO+Utilisation+Percentage+Alert"
+            summary: "Disk-IO usage in percentage {{ $labels.instance_name }} -  {{ $labels.instance }} has been high for more than 15 minutes. Current Utilization is: {{$value}}.. Current Utilization is : {{$value}}"
+            description: "Disk-IO usage in percentage {{ $labels.instance_name }} -  {{ $labels.instance }} has been high for more than 15 minutes. Current Utilization is: {{$value}}}."
+
+        - alert: aw-or-pd-pvc-fe-storage-disk
+          expr: (1-((kubelet_volume_stats_inodes_free{persistentvolumeclaim=~".+", namespace=~"fe-prod"} / kubelet_volume_stats_inodes{persistentvolumeclaim=~".+", namespace=~"fe-prod"}*100)/100) ) * 100 >= 50
+          for: 5m
+          labels:
+            cloud: aw
+            region: or
+            service: pvc
+            env: pd 
+            client: fe
+            identifier: storage
+            classifier: disk
+            alert_sub_category: inode_utilization
+            severity: warning
+            threshold: "30"
+            frequency: 5m
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/kRrpZoCVz/inode-utilization?viewPanel=2"
+            summary: "High inode utilization on PVC {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} ({{ $value }}%)"
+            description: "The inode utilization on PVC {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} is {{ $value }}%. Check the PVC and consider increasing its storage capacity."
+
+    - name: RMQ Alerts
+      rules:
+        - alert: DeadRMQ
+          expr: sum(rabbitmq_node_running{url=~".+"}) by (url) == 0
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "RMQ Cluster {{ $labels.endpoint }} is Dead."
+            description: "RMQ Cluster {{ $labels.endpoint }} is Dead for more than 2 minutes."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725642241/DeadRMQ+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+
+        - alert: RMQNodeDown
+          expr: avg(rabbitmq_node_running{node=~".+"}) by (node,service) == 0
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "RMQ Node {{ $labels.node }} is Down on {{ $labels.url }} Cluster"
+            description: "RMQ Node {{ $labels.node }} is Down on {{ $labels.url }} Cluster for more than 2 minutes."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2721775951/RMQNodeDown+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+
+        - alert: RMQFileDescriptorUtilizationInPercentage
+          expr: avg(rabbitmq_node_fd_used{url=~".+"}/rabbitmq_node_fd_total{url=~".+"} )by (url,node) * 100 >= 75
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "File Descriptor Utilization of RMQ Node {{ $labels.node }} is High on {{ $labels.url }} Cluster, Current Utilization is {{$value}}%"
+            description: "File Descriptor Utilization of RMQ Node {{ $labels.node }} is High on {{ $labels.url }} Cluster for more than 2 minutes."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724855864/RMQFileDescriptorUtilizationInPercentage+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            
+        - alert: RMQHighSocketUtilizationInPercentage
+          expr: avg(rabbitmq_node_sockets_used{url=~".+"}/rabbitmq_node_sockets_total{url=~".+"}) by (url,node) * 100  >= 75
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "Socket Utilization of RMQ Node {{ $labels.node }} is High on {{ $labels.url }} Cluster, Current Utilization is {{$value}}%"
+            description: "Socket Utilization of RMQ Node {{ $labels.node }} is High on {{ $labels.url }} Cluster for more than 2 minutes."
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+
+        - alert: RMQHighMemoryUtilizationInPercentage
+          expr: avg by(url, node) (rabbitmq_node_mem_used{url!="https://frosty-bloodhound.rmq.cloudamqp.com:443"} / rabbitmq_node_mem_limit{url!="https://frosty-bloodhound.rmq.cloudamqp.com:443"})* 100 >= 75
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "Memory Utilization of RMQ Node {{ $labels.node }} is High on {{ $labels.url }} Cluster, Current Utilization is {{$value}}%"
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724724787/RMQHighMemoryUtilizationInPercentage+Alert+Runbook"
+            description: "Memory Utilization of RMQ Node {{ $labels.node }} is High on {{ $labels.url }} Cluster for more than 2 minutes."
+
+        - alert: RMQHighQueuSize
+          expr: avg(rabbitmq_queue_messages{job!="prometheus-rabbitmq-exporter-feprod",url!~"https://sleepy-cyan-dog.rmq2.cloudamqp.com:443", queue!~"USER_COMMUNICATION_LOG_LAZY_QUEUEprod|sms-queue-prod|int-queue-dev|url_shorten-queue-dev"}) by (node,url,queue) >= 5000
+          for: 7m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster, Current Queue size is {{$value}}%"
+            description: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster for more than 5 minutes."
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1806303441/How+to+Solve+RMQ-Prod+----+Queued+messages"
+        - alert: RMQHighQueuSize
+          expr: avg(rabbitmq_queue_messages{url=~"http://172.31.7.201:15672", queue=~"int-queue-dev"}) by (node,url,queue) >= 50000
+          for: 7m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster, Current Queue size is {{$value}}%"
+            description: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster for more than 5 minutes."
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1806303441/How+to+Solve+RMQ-Prod+----+Queued+messages"
+
+        - alert: RMQHighQueuSize
+          expr: avg(rabbitmq_queue_messages{url=~"http://172.31.7.201:15672", queue=~"url_shorten-queue-dev"}) by (node,url,queue) >= 10000
+          for: 7m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster, Current Queue size is {{$value}}%"
+            description: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster for more than 5 minutes."
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1806303441/How+to+Solve+RMQ-Prod+----+Queued+messages"   
+
+        # - alert: RMQHighQueuSize
+        #   expr: avg(rabbitmq_queue_messages{url=~"https://sleepy-cyan-dog.rmq2.cloudamqp.com:443", queue!~"mqtt_publish_prod|PROCESS_SCHEDULER_QUEUE_2-prod|sms-queue-prod|CONNECTOR-SECOND-LAZY-QUEUE-prod|post-hook-lazy-backup4-prod"}) by (node,url,queue) >= 5000
+        #   for: 7m
+        #   labels:
+        #     severity: medium
+        #     env: aws-oregon-prod-k8s
+        #     service: rmq
+        #   annotations:
+        #     summary: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster, Current Queue size is {{$value}}%"
+        #     description: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster for more than 5 minutes."
+        #     graph: "https://grafana.k8s.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+        #     runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1806303441/How+to+Solve+RMQ-Prod+----+Queued+messages"
+
+        # - alert: RMQHighQueuSize
+        #   expr: avg(rabbitmq_queue_messages{url=~"https://sleepy-cyan-dog.rmq2.cloudamqp.com:443", queue=~"PROCESS_SCHEDULER_QUEUE_2-prod"}) by (node,url,queue) >= 50000
+        #   for: 7m
+        #   labels:
+        #     severity: medium
+        #     env: aws-oregon-prod-k8s
+        #     service: rmq
+        #   annotations:
+        #     summary: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster, Current Queue size is {{$value}}%"
+        #     description: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster for more than 5 minutes."
+        #     graph: "https://grafana.k8s.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+        #     runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1806303441/How+to+Solve+RMQ-Prod+----+Queued+messages"
+
+        - alert: RMQHighQueuSize
+          expr: avg(rabbitmq_queue_messages{job!="prometheus-rabbitmq-exporter-feprod",url=~".+", queue=~"sms-queue-prod"}) by (node,url,queue) >= 4000
+          for: 10m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rmq
+          annotations:
+            summary: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster, Current Queue size is {{$value}}%"
+            description: "RMQ Queue {{ $labels.queue }} is increasing on {{ $labels.url }} Cluster for more than 5 minutes."
+            graph: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/1806303441/How+to+Solve+RMQ-Prod+----+Queued+messages"
+
+        - alert: Rabbitmq-queue-consumercountlessthan5
+          expr: avg by(queue, url) ((rabbitmq_queue_consumers{job!="prometheus-rabbitmq-exporter-feprod",url=~".+"} == 0) and (rabbitmq_queue_messages{url=~".+"} > 0) and (rabbitmq_queue_messages{url!~"https://devoted-mole.rmq.cloudamqp.com:443|https://clever-dark-jellyfish.rmq2.cloudamqp.com:443"})) < 5
+          for: 5m
+          labels:
+            severity: critical
+            env: aws-oregon-k8s
+            service: rmq
+            team: Devops
+          annotations:
+            graph_link: "https://grafana.us.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+            description: "Consumer count on RMQ Queue {{ $labels.queue }}  on {{ $labels.url }} is low for more than 5 minutes.Current count is : {{$value}}. please look into this"
+        
+        # - alert: RMQQueue-queue-consumer-count-lessthan100-address_lookup-prod
+        #   expr: avg(rabbitmq_queue_consumers{url="https://sleepy-cyan-dog.rmq2.cloudamqp.com:443",queue="address_lookup-prod"}) by (queue,url) <= 40
+        #   for: 5m
+        #   labels:
+        #     severity: medium
+        #     env: fareye-prod
+        #     service: rmq
+        #     team: Mobi Platform
+        #   annotations:
+        #     graph_link: "https://grafana.k8s.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m&viewPanel=30"
+        #     description: "Consumer count on RMQ Queue {{ $labels.queue }}  of {{ $labels.url }} is lower than its threshold value 75 for more than 5 minutes.Current count is : {{$value}}. please look into this"
+      
+        # - alert: RMQQueue-queue-consumer-count-lessthan100-custom-pdf-upload-prod
+        #   expr: avg(rabbitmq_queue_consumers{url="https://sleepy-cyan-dog.rmq2.cloudamqp.com:443",queue="custom-pdf-upload-prod"}) by (queue,url) <= 40
+        #   for: 2m
+        #   labels:
+        #     severity: high
+        #     env: fareye-prod
+        #     service: rmq
+        #     team: Mobi Platform
+        #   annotations:
+        #     graph_link: "https://grafana.k8s.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m&viewPanel=30"
+        #     description: "Consumer count on RMQ Queue {{ $labels.queue }}  of {{ $labels.url }} is lower than its threshold value 40 for more than 5 minutes.Current count is : {{$value}}. please look into this"
+
+        # - alert: RMQQueue-queue-consumer-count-lessthan10-report-prod-fe-stack-mobi-service-scheduler
+        #   expr: avg(rabbitmq_queue_consumers{url!="https://sleepy-cyan-dog.rmq2.cloudamqp.com:443",queue="report-prod-fe-stack-mobi-service-scheduler-0"}) by (queue,url) <= 10
+        #   for: 5m
+        #   labels:
+        #     severity: medium
+        #     env: fareye-prod
+        #     service: rmq
+        #     team: Mobi Platform
+        #   annotations:
+        #     graph_link: "https://grafana.k8s.fareye.io/d/rabbitmq/rabbitmq?orgId=1&refresh=5m"
+        #     description: "Consumer count on RMQ Queue {{ $labels.queue }}  of {{ $labels.url }} is lower than its threshold value 10 for more than 5 minutes.Current count is : {{$value}}. please look into this" 
+    
+    - name: RDS Alerts
+      rules:
+        - alert: NoDataAlert--RDSExporterDown
+          expr: absent(avg(avg_over_time(aws_rds_cpuutilization_average{dbinstance_identifier=~".+"}[10m])) by (dbinstance_identifier)) == 1
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "RDS Instance {{ $labels.instance }} is Down."
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "RDS Metrics are not receiving Please check it ASAP."
+        - alert: RDSHighCPUutilization
+          expr: avg(avg_over_time(aws_rds_cpuutilization_average{dbinstance_identifier!~"fareyeconnect|fareye-staging|hzl-prod"}[10m])) by(dbinstance_identifier) >= 80
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "CPU Usage high on {{ $labels.db_instance_identifier }} RDS Instance,Current Utilization is: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "CPU Usage high on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+        - alert: RDSHighCPUutilization
+          expr: avg(avg_over_time(aws_rds_cpuutilization_average{dbinstance_identifier=~"fareyeconnect"}[10m])) by(dbinstance_identifier) >= 80
+          for: 10m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "CPU Usage high on {{ $labels.db_instance_identifier }} RDS Instance,Current Utilization is: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "CPU Usage high on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+        - alert: RDSReplicaLagAlert
+          expr: avg(avg_over_time(aws_rds_replica_lag_average{dbinstance_identifier=~".+"}[10m])) by (dbinstance_identifier) / 60 >= 10
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Replica Lag high on {{ $labels.dbinstance_identifier }} RDS, Current Lag is: {{$value}} Minutes"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "Replica Lag high on {{ $labels.dbinstance_identifier }} RDS, Current Lag is: {{$value}} Minutes for more than 2 minutes."
+        - alert: RDSHighActiveConnection
+          expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_database_connections_average{dbinstance_identifier=~".+",dbinstance_identifier!~"dominos|micro-service|fareye-staging|fareye-prod"}[10m])) >= 400
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Active Connection on RDS {{ $labels.db_instance_identifier }} are high,Current Active Connection's are: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "High Active Connection on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+
+        - alert: RDSLowActiveConnection
+          expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_database_connections_average{dbinstance_identifier=~".+",dbinstance_identifier!~"fareye-environment-manager|dominos|micro-service|fareye-staging|fareye-prod"}[10m])) <= 20
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Active Connection on RDS {{ $labels.db_instance_identifier }} are low,Current Active Connection's are: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "Low Active Connection on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+
+        # - alert: RDSHighActiveConnection
+        #   expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_database_connections_average{dbinstance_identifier=~"dominos"}[10m])) >= 600
+        #   for: 10m
+        #   labels:
+        #     severity: medium
+        #     env: aws-oregon-prod-k8s
+        #     service: rds
+        #   annotations:
+        #     summary: "Active Connection on RDS {{ $labels.db_instance_identifier }} are high,Current Active Connection's are: {{$value}}"
+        #     graph: "https://grafana.k8s.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+        #     description: "High Active Connection on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+        - alert: RDSHighActiveConnection
+          expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_database_connections_average{dbinstance_identifier=~"fareye-staging"}[10m])) >= 460
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Active Connection on RDS {{ $labels.db_instance_identifier }} are high,Current Active Connection's are: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "High Active Connection on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+
+        - alert: RDSLowActiveConnection
+          expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_database_connections_average{dbinstance_identifier=~"fareye-staging"}[10m])) <= 20
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Active Connection on RDS {{ $labels.db_instance_identifier }} are Low,Current Active Connection's are: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "Low Active Connection on {{ $labels.db_instance_identifier }} for more than 2 minutes."
+
+        - alert: RDSFreeMemoryAvailable
+          expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_freeable_memory_average{dbinstance_identifier=~".+",dbinstance_identifier!~"superset-staging|fareye-staging"}[10m]) / 1024 / 1024 / 1024) <= 1
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Available Free Memory on RDS {{ $labels.db_instance_identifier }} is less than 1GB,Current Utilization is: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "Available Free Memory on RDS {{ $labels.db_instance_identifier }} is less than {{$value}} for more than 5 minutes."
+        - alert: RDSFreeMemoryAvailable
+          expr: avg by(dbinstance_identifier) (avg_over_time(aws_rds_freeable_memory_average{dbinstance_identifier=~"superset-staging"}[10m]) / 1024 / 1024 / 1024) <= 0.5
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            summary: "Available Free Memory on RDS {{ $labels.db_instance_identifier }} is less than 500MB,Current Utilization is: {{$value}}"
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            description: "Available Free Memory on RDS {{ $labels.db_instance_identifier }} is less than {{$value}} for more than 5 minutes."
+        - alert: RDSFreeDiskSpace
+          expr: (100 - ((avg by(dbinstance_identifier) (avg_over_time(aws_rds_free_storage_space_average{dbinstance_identifier=~"fareye-connectstaging|fareye-summary-12|fareyeconnect|hzl-prod|integration|integration-main|superset-staging"}[10m])) / 1024 / 1024 / 1024) / (avg by(dbinstance_identifier) (avg_over_time(RDS_DB_INSTANCE_SIZE{dbinstance_identifier=~".+"}[10m]))) * 100)) >= 90
+          for: 5m
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            summary: "Disk Utilization on RDS {{ $labels.dbinstance_identifier }} is greater than 90%, current utilization is: {{$value}}%"
+            description: "Disk Utilization on RDS {{ $labels.dbinstance_identifier }} is greater than 90%, current utilization is: {{$value}}%"
+        - alert: RDSFreeDiskSpace
+          expr: (100 - ((avg by(dbinstance_identifier) (avg_over_time(aws_rds_free_storage_space_average{dbinstance_identifier=~"fareye-connectstaging|fareye-summary-12|fareyeconnect|hzl-prod|integration|integration-main|superset-staging"}[10m])) / 1024 / 1024 / 1024) / (avg by(dbinstance_identifier) (avg_over_time(RDS_DB_INSTANCE_SIZE{dbinstance_identifier=~".+"}[10m]))) * 100)) >= 95
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            summary: "Disk Utilization on RDS {{ $labels.dbinstance_identifier }} is greater than 95%, current utilization is: {{$value}}%"
+            description: "Disk Utilization on RDS {{ $labels.dbinstance_identifier }} is greater than 95%, current utilization is: {{$value}}%"
+        - alert: RDSFreeDiskSpace
+          expr: (100 - ((avg by(dbinstance_identifier) (avg_over_time(aws_rds_free_storage_space_average{dbinstance_identifier=~"fareye-connectstaging|fareye-summary-12|fareyeconnect|hzl-prod|integration|integration-main|superset-staging"}[10m])) / 1024 / 1024 / 1024) / (avg by(dbinstance_identifier) (avg_over_time(RDS_DB_INSTANCE_SIZE{dbinstance_identifier=~".+"}[10m]))) * 100)) >= 85
+          for: 5m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: rds
+          annotations:
+            graph: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1"
+            summary: "Disk Utilization on RDS {{ $labels.dbinstance_identifier }} is greater than 85%, current utilization is: {{$value}}%"
+            description: "Disk Utilization on RDS {{ $labels.dbinstance_identifier }} is greater than 85%, current utilization is: {{$value}}%"
+
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"fareyeconnect|pickupservice|integration"}[10m])) by (dbinstance_identifier) >= 30
+          for: 15m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS RDS {{ $labels.dbinstance_identifier }} is greater than 30, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"fareyeconnect|pickupservice|integration"}[10m])) by (dbinstance_identifier) >= 40
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 40, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"fareyeconnect|pickupservice|integration"}[10m])) by (dbinstance_identifier) >= 50
+          for: 15m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 50, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"email-service|fareye-environment-manager|fareye-summary-12"}[10m])) by (dbinstance_identifier) >= 10
+          for: 15m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS RDS {{ $labels.dbinstance_identifier }} is greater than 10, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"email-service|fareye-environment-manager|fareye-summary-12"}[10m])) by (dbinstance_identifier) >= 15
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 15, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"email-service|fareye-environment-manager|fareye-summary-12"}[10m])) by (dbinstance_identifier) >= 20
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 20, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"micro-service"}[10m])) by (dbinstance_identifier) >= 15
+          for: 15m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS RDS {{ $labels.dbinstance_identifier }} is greater than 15, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"micro-service"}[10m])) by (dbinstance_identifier) >= 20
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 20, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"micro-service"}[10m])) by (dbinstance_identifier) >= 25
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 25, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"integration-main"}[10m])) by (dbinstance_identifier) >= 5
+          for: 15m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS RDS {{ $labels.dbinstance_identifier }} is greater than 5, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"integration-main"}[10m])) by (dbinstance_identifier) >= 10
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 10, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+        - alert: RDS-disk-queue-depth
+          expr: avg(avg_over_time(aws_rds_disk_queue_depth_average{dbinstance_identifier=~"integration-main"}[10m])) by (dbinstance_identifier) >= 15
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: rds
+            team: DBA
+          annotations:
+            description: "Total count of disk_queue_depth on RDS {{ $labels.dbinstance_identifier }} is greater than 15, current utilization is: {{$value}}"
+            graph_link: "https://grafana.us.fareye.io/d/f-uVxbi7z/rds-dashboard?orgId=1&viewPanel=13"
+
+    - name: Website Rules
+      rules:
+        - alert: NoDataAlert-WebsiteDown
+          expr: absent(avg(probe_success{target=~".+",target!~"aws-prod-oregon-k8s-dominosprod-integration|aws-prod-oregon-k8s-dominosprod-nginx"}) by (instance,target)) == 1
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "Monitoring metrics not receiving from blackbox exporter. Please check ASAP"
+            description: "Monitoring metrics not receiving from blackbox exporter. Please check ASAP."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2958131259/No+data+alerts"
+        - alert: WebsiteDown
+          expr: avg(probe_success{target=~".+",target!~"aws-prod-oregon-k8s-dominosprod-integration|aws-prod-oregon-k8s-dominosprod-nginx|aws-prod-oregon-k8s-kafka-manager-prod-website|aws-prod-oregon-k8s-tripservice-prod",instance!~"https://mq-prod.fareyeconnect.com/login|https://transportation.fareye.co/|https://tpt.fareye.co/|http://172.31.34.109:9000|https://k8s-test.fareye.co/|http://internal-RosterService-Prod-205535427.us-west-2.elb.amazonaws.com:/actuator/health|https://lm-staging.fareye.co/||http://routing-engine.staging.svc.cluster.local:8090/health|http://172.31.4.207:8080/v1/|http://staging-routing-engine.fareye.co:8090/health|http://fareye.com|https://www.getfareye.com/|https://couriersplease-merchant.fareye.co/"}) by (instance,target)  == 0
+          for: 5s
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "Website {{ $labels.target}} is Down."
+            description: "Website named {{ $labels.target}} those full address is {{ $labels.instance}} Down for more than 5 sec."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725675043/WebsiteDown+Alert+Runbook"
+        - alert: WebsiteDown
+          expr: avg(probe_success{target=~"aws-prod-oregon-k8s-getfareye-com|aws-prod-oregon-k8s-fareye-com",instance=~"http://fareye.com|https://www.getfareye.com/"}) by (instance,target) == 0
+          for: 10m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "Website {{ $labels.target}} is Down."
+            description: "Website named {{ $labels.target}} those full address is {{ $labels.instance}} Down for more than 10 min."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725675043/WebsiteDown+Alert+Runbook"
+        
+        - alert: WebsiteDown-RoutingStaging
+          expr: avg(probe_success{instance=~"http://routing-engine.staging.svc.cluster.local:8090/health"}) by (instance,target) == 0
+          for: 2m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "Website {{ $labels.target}} is Down."
+            description: "Website named {{ $labels.target}} those full address is {{ $labels.instance}} Down for more than 2 minutes."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725675043/WebsiteDown+Alert+Runbook"
+        - alert: WebsiteHighResponseTime
+          expr: avg(probe_duration_seconds{target=~".+",target!~"aws-prod-oregon-k8s-dominosprod-integration|aws-prod-oregon-k8s-dominosprod-nginx|aws-oregon-staging-k8s-routing-enginer|aws-prod-oregon-k8s-routing-staging.fareye|aws-prod-oregon-k8s-fareye-staging-backup|aws-prod-oregon-k8s-getfareye-com|aws-prod-oregon-k8s-fareye-com"}) by (instance,target) >= 5
+          for: 5s
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "ResponseTime of Website {{ $labels.target}} is High."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724823094/WebsiteHighResponseTime+Alert+Runbook"
+            description: "ResponseTime of Website named {{ $labels.target}} those full address is {{ $labels.instance}} is {{ $value }}Seconds for more than 5 minutes."
+        - alert: WebsiteHighResponseTime
+          expr: avg(probe_duration_seconds{target=~"aws-prod-oregon-k8s-getfareye-com|aws-prod-oregon-k8s-fareye-com"}) by (instance,target) >= 5
+          for: 10m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "ResponseTime of Website {{ $labels.target}} is High."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724823094/WebsiteHighResponseTime+Alert+Runbook"
+            description: "ResponseTime of Website named {{ $labels.target}} those full address is {{ $labels.instance}} is {{ $value }}Seconds for more than 10 minutes."
+
+        - alert: WebsiteHighResponseTime-RoutingStaging
+          expr: avg(probe_duration_seconds{target=~"aws-oregon-staging-k8s-routing-enginer|aws-prod-oregon-k8s-routing-staging.fareye"}) by (instance,target) >= 5
+          for: 2m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+          annotations:
+            summary: "ResponseTime of Website {{ $labels.target}} is High."
+            graph: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724823094/WebsiteHighResponseTime+Alert+Runbook"
+            description: "ResponseTime of Website named {{ $labels.target}} those full address is {{ $labels.instance}} is {{ $value }}Seconds for more than 2 minutes."
+
+        - alert: WebsiteSSLExpiry
+          expr: avg((probe_ssl_earliest_cert_expiry{instance=~".+",instance!~"http://fareye.com|https://www.getfareye.com/|.*.fareye.io.+"}-time())/(60*60*24)) by (instance,name) < 45
+          for: 2m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+            team: devops
+          annotations:
+            Graph_link: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1%22"
+            description: "SSL Certificate of Website {{ $labels.instance}} is about to expire in {{ $value }}Days."
+
+        - alert: WebsiteSSLExpiry
+          expr: avg((probe_ssl_earliest_cert_expiry{instance=".+",instance="https://superset-staging.fareye.co/"}-time())/(60*60*24)) by (instance,name) < 45
+          for: 2m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: website
+            team: devops
+          annotations:
+            Graph_link: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1%22"
+            description: "SSL Certificate of Website {{ $labels.instance}} is about to expire in {{ $value }}Days."
+
+        - alert: WebsiteSSLExpiry
+          expr: avg((probe_ssl_earliest_cert_expiry{instance=~".+",instance!~"http://fareye.com|https://www.getfareye.com/|.*.fareye.io.+"}-time())/(60*60*24)) by (instance,name) < 90
+          for: 2m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: website
+            team: devops
+          annotations:
+            Graph_link: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1%22"
+            description: "SSL Certificate of Website {{ $labels.instance}} is about to expire in {{ $value }}Days."
+ 
+        - alert: WebsiteSSLExpiry
+          expr: avg((probe_ssl_earliest_cert_expiry{instance=~".+",instance!~"http://fareye.com|https://www.getfareye.com/|.*.fareye.io.+"}-time())/(60*60*24)) by (instance,name) < 60
+          for: 2m
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: website
+            team: devops
+          annotations:
+            Graph_link: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1%22"
+            description: "SSL Certificate of Website {{ $labels.instance}} is about to expire in {{ $value }}Days."
+
+        - alert: WebsiteSSLExpiry
+          expr: avg((probe_ssl_earliest_cert_expiry{instance=~".+",instance=~"http://fareye.com|https://www.getfareye.com/"}-time())/(60*60*24)) by (instance,name) < 3
+          for: 2m
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: website
+            team: devops
+          annotations:
+            Graph_link: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1%22"
+            description: "SSL Certificate of Website {{ $labels.instance}} is about to expire in {{ $value }}Days."
+        
+        - alert: WebsiteSSLExpiry
+          expr: avg((probe_ssl_earliest_cert_expiry{instance=~".+",instance=~"http://fareye.com"}-time())/(60*60*24)) by (instance,name) < 30
+          for: 2m
+          labels:
+            severity: warning
+            env: aws-oregon-prod-k8s
+            service: website
+            team: devops
+          annotations:
+            Graph_link: "https://grafana.us.fareye.io/d/websitedashboard/website-monitoring?orgId=1%22"
+            description: "SSL Certificate of Website {{ $labels.instance}} is about to expire in {{ $value }}Days."    
+
+        
+    - name: ElasticSearch Rules
+      rules:
+        - alert: NoDataAlert--ElasticSearchCluster
+          expr: absent(avg(elasticsearch_cluster_health_status_code{name=~".+"}) by (name,status,kubernetes_namespace)) == 1
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "ElasticSearch Cluster {{ $labels.name }} is {{ $labels.status}}"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1"
+            description: "ElasticSearch Metrics are not receiving. Please check it ASAP."
+#         - alert: RedElasticSearchCluster
+#           expr: avg(elasticsearch_cluster_health_status_code{name=~".+"}) by (name,status,kubernetes_namespace,host) > 2
+#           for: 5m
+#           labels:
+#             severity: medium
+#             env: aws-oregon-prod-k8s
+#             service: elasticsearch
+#           annotations:
+#             summary: "ElasticSearch Cluster {{ $labels.name }} is {{ $labels.status}}"
+#             graph: "https://grafana.k8s.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=116"
+#             runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725675023/RedElasticSearchCluster+Alert+Runbook"
+#             description: "ElasticSearch Cluster {{ $labels.name }} is Red for more than 5 minutes."
+        - alert: JVMMemoryUtilizationOnElasticSearch
+          expr: avg(elasticsearch_jvm_mem_heap_used_in_bytes{cluster_name!~"34b27bddb3ea9e29999d4113eca717cd"}/elasticsearch_jvm_mem_heap_max_in_bytes{cluster_name!~"34b27bddb3ea9e29999d4113eca717cd"} * 100) by (cluster_name,node_name,host) >= 85
+          for: 10m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "JVM Memory Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is High."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724102211/JVMMemoryUtilizationOnElasticSearch+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=31"
+            description: "JVM Memory Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is {{$value}} for more than 10 minutes."
+        - alert: LowDiskAvailableOnElasticSearch
+          expr: avg(elasticsearch_indices_store_size_in_bytes{cluster_name!~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}/elasticsearch_fs_data_0_total_in_bytes{cluster_name!~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}* 100) by (cluster_name,node_name,host) >=90
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is High."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724659247/DiskUtilizationOnElasticSearch+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=32"
+            description: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is {{$value}} for more than 5 minutes."
+
+        - alert: LowDiskAvailableOnElasticSearch
+          expr: avg(elasticsearch_indices_store_size_in_bytes{cluster_name=~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}/elasticsearch_fs_data_0_total_in_bytes{cluster_name=~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}* 100) by (cluster_name,node_name,host) >= 75
+          for: 5m
+          labels:
+            severity: info
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is High."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724659247/DiskUtilizationOnElasticSearch+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=32"
+            description: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is {{$value}} for more than 5 minutes."
+
+        - alert: LowDiskAvailableOnElasticSearch
+          expr: avg(elasticsearch_indices_store_size_in_bytes{cluster_name=~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}/elasticsearch_fs_data_0_total_in_bytes{cluster_name=~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}* 100) by (cluster_name,node_name,host) >= 80
+          for: 2m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is High."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724659247/DiskUtilizationOnElasticSearch+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=32"
+            description: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is {{$value}} for more than 2 minutes."
+
+        - alert: LowDiskAvailableOnElasticSearch
+          expr: avg(elasticsearch_indices_store_size_in_bytes{cluster_name=~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}/elasticsearch_fs_data_0_total_in_bytes{cluster_name=~"4eeece50ff1145809b1bfa45badd25f9|79694bab407e48c2858499494725c53f|b195110f3e0e406080746a7dbc93d5f2"}* 100) by (cluster_name,node_name,host) >= 90
+          for: 1m
+          labels:
+            severity: critical
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is High."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2724659247/DiskUtilizationOnElasticSearch+Alert+Runbook"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=32"
+            description: "Disk Usage on {{ $labels.node_name}} of {{ $labels.cluster }} ElasticSearch Cluster is {{$value}} for more than 1 minutes."            
+
+        - alert: CPUUtilizationOnElasticSearch
+          expr: avg(elasticsearch_process_cpu_percent{cluster_name!~"fe176d230bf140f1b9a2eb57e2d5712d",node_name=~".+"}) by (cluster_name,node_name,host)  >= 70
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: elasticsearch
+          annotations:
+            summary: "CPU Usage on {{ $labels.node_name}} of {{ $labels.cluster_name }} ElasticSearch Cluster is High."
+            description: "CPU Usage on {{ $labels.node_name}} of {{ $labels.cluster_name }} ElasticSearch Cluster is {{$value}} for more than 5 minutes."
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725642250/CPUUtilizationOnElasticSearch+Runbook+Alert"
+            graph: "https://grafana.us.fareye.io/d/FV00uNwnz/elasticsearch-dashboard?orgId=1&viewPanel=51"
+
+    # - name: Postgres Rules
+    #   rules:
+    #   - alert: HugeReplicationLag
+    #     expr: avg((pg_replication_lag > 120) AND ON(server) (pg_replication_is_replica == 1 ))  by (server) / 60 >= 60
+    #     for: 5m
+    #     labels:
+    #       severity: medium
+    #       env: aws-oregon-prod-k8s
+    #       service: db
+    #     annotations:
+    #       description: replication for {{ template "prometheus-postgres-exporter.fullname" . }} PostgreSQL is lagging by {{ "{{ $value }}" }} min(s).
+    #       summary: PostgreSQL replication is lagging by {{ "{{ $value }}" }} min(s).
+
+    - name: Redis Rules
+      rules:
+        - alert: NoDataAlert--RedisExporterDown
+          expr: absent(avg(redis_up) by (job,instance,kubernetes_namespace)) == 1
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is Down."
+            description: "Redis Metrics are not receiving Please check it ASAP."
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard?orgId=1"
+        - alert: RedisDown
+          expr: avg(redis_up{instance!~"redis://fareye-prod-latest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379|redis://172.31.3.163:6379"}) by (job,instance,kubernetes_namespace) == 0
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is Down."
+            description: "Redis Instance {{ $labels.instance }} ${{ $labels.kubernetes_namespace}} Namespace is Down for more than 2 minutes."
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard?orgId=1"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2725085276/Redis+Down+Alert+Runbook"
+        - alert: RedisHighMemoryUtilization
+          expr: avg(redis_memory_used_bytes{instance!~"redis://fareye-prod-latest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379|redis://dominointloadtest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"}  /1024 /1024) by (instance,kubernetes_namespace) >= 2048
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is using too much memory"
+            description: "Redis Instance {{ $labels.instance }} is using {{ $value }}MB of its available memory in last 5minutes"
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2717549429/Redis+memory+High+Alert+Runbook"
+            
+        - alert: RedisHighMemoryUtilization
+          expr: avg(redis_memory_used_bytes{instance=~"redis://dominointloadtest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"} * 100 /redis_memory_max_bytes{instance=~"redis://dominointloadtest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"}) by (prom,name,instance) >= 65
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is using too much memory"
+            description: "Redis Instance {{ $labels.instance }} is using {{ $value }}MB of its available memory in last 5minutes"
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2717549429/Redis+memory+High+Alert+Runbook"
+            
+        - alert: RedisHighMemoryUtilization
+          expr: avg(redis_memory_used_bytes{instance="redis://staging-redis.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"} * 100 /redis_memory_max_bytes{instance="redis://staging-redis.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"}) by (job,instance) >= 85
+          for: 5m
+          labels:
+            severity: High
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is using too much memory"
+            description: "Redis Instance {{ $labels.instance }} is using {{ $value }}% of its available memory in last 5 minutes"
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2717549429/Redis+memory+High+Alert+Runbook"            
+            
+
+        - alert: RedisHighMemoryUtilization
+          expr: avg(redis_memory_used_bytes{instance="redis://fareye-prod-latest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"} * 100 /redis_memory_max_bytes{instance="redis://fareye-prod-latest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"}) by (job,instance) >= 85
+          for: 5m
+          labels:
+            severity: High
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is using too much memory"
+            description: "Redis Instance {{ $labels.instance }} is using {{ $value }}% of its available memory in last 5 minutes"
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard"
+            runbook: "https://fareye.atlassian.net/wiki/spaces/EE/pages/2717549429/Redis+memory+High+Alert+Runbook"            
+            
+
+
+
+
+        - alert: RedisHighCPUUtilization
+          expr: avg(rate(redis_cpu_sys_seconds_total{instance=~"redis://fareye-prod-latest.nn7bzi.ng.0001.usw2.cache.amazonaws.com:6379"}[5m])) by (instance,kubernetes_namespace)*100 >= 70
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} is using too much CPU"
+            description: "Redis Instance {{ $labels.instance }} is using {{ $value }}% of its CPU in last 5 minutes"
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard"
+
+
+        - alert: RedisKeyEviction
+          expr: avg(increase(redis_evicted_keys_total{instance=~".+"}[5m])) by (instance,kubernetes_namespace) > 0
+          for: 5m
+          labels:
+            severity: medium
+            env: aws-oregon-prod-k8s
+            service: redis
+          annotations:
+            summary: "Redis Instance {{ $labels.instance }} has evicted keys."
+            description: "Redis instance {{ $labels.instance }} has evicted {{ $value }} keys in the last 5 minutes"
+            graph: "https://grafana.us.fareye.io/d/redis/redis-dashboard?orgId=1&viewPanel=8"
+
+    - name: PodNotReady - ReadinessFailed
+      rules:
+        - alert: PodNotReady - ReadinessFailed
+          expr:  avg (kube_pod_container_status_ready{namespace=~"fe-prod",pod=~"fe-stack-mobi-service-.+", kubernetes_name="prometheus-stack-kube-state-metrics", pod!~"thread-.+|routing-.+|dominos-table-.+|monthly-table-creation-.+"}) by (namespace,pod,kubernetes_node) < 1
+          for: 15s
+          labels:
+            severity: high
+            env: aws-oregon-prod-k8s    
+            service: kube_pod
+            team: devops
+          annotations:
+            description: "readiness is failed for {{ $labels.pod }} in {{ $labels.namespace }} on node {{ $labels.kubernetes_node }} for more than 15s"
+
+    # - name: SESRules
+    #   rules:
+    #     - alert: NoDataAlert--CloudwatchSimpleEmailService-OREGON
+    #       expr: absent(avg(avg_over_time(aws_ses_reputation_complaint_rate_average[10m])) by (instance)) == 1
+    #       for: 30m
+    #       labels:
+    #         severity: medium
+    #         env: aws-oregon-prod-k8s
+    #         service: ses
+    #       annotations:
+    #         summary: "Metrice not receiving of cloudwatch for SES"
+    #         description: "Cloudwatch SES Metrics are not receiving Please check it ASAP."
+    #         graph: "https://grafana.k8s.fareye.io/d/ses/aws-ses?orgId=1"
+    #     - alert: SimpleEmailService_BouncerRateHigh-OREGON-PROD
+    #       expr: avg(avg_over_time(aws_ses_reputation_bounce_rate_average[10m])) by (instance) * 100 >= 2
+    #       for: 5m
+    #       labels:
+    #         severity: medium
+    #         env: aws-oregon-prod-k8s
+    #         service: ses
+    #       annotations:
+    #         summary: "SES bounce rate is high please check in aws oregon-prod"
+    #         description: "SES bounce rate is high please check in aws oregon-prod"
+    #         graph: "https://grafana.k8s.fareye.io/d/ses/aws-ses?orgId=1"
+    #     - alert: SimpleEmailService_ComplainRateHigh-OREGON-PROD
+    #       expr: avg(avg_over_time(aws_ses_reputation_complaint_rate_average[5m])) by (instance) * 100 >= 2
+    #       for: 5m
+    #       labels:
+    #         severity: medium
+    #         env: aws-oregon-prod-k8s
+    #         service: ses
+    #       annotations:
+    #         summary: "SES complain rate is high please check in aws oregon-prod"
+    #         description: "SES complain rate is high please check in aws oregon-prod"
+    #         graph: "https://grafana.k8s.fareye.io/d/ses/aws-ses?orgId=1"
